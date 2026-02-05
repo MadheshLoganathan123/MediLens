@@ -40,9 +40,10 @@ interface ExtendedUserProfile {
 interface EnhancedProfileSetupScreenProps {
   initialProfile: any;
   onComplete: (profile: ExtendedUserProfile) => void;
+  onBack?: () => void;
 }
 
-export function EnhancedProfileSetupScreen({ initialProfile, onComplete }: EnhancedProfileSetupScreenProps) {
+export function EnhancedProfileSetupScreen({ initialProfile, onComplete, onBack }: EnhancedProfileSetupScreenProps) {
   const [step, setStep] = useState(1);
 
   // Personal Information
@@ -356,14 +357,25 @@ export function EnhancedProfileSetupScreen({ initialProfile, onComplete }: Enhan
               </div>
             </div>
 
-            <button
-              type="button"
-              onClick={handleNext}
-              disabled={!name || !dateOfBirth || !gender || !phone}
-              className="w-full mt-8 bg-gradient-to-r from-blue-600 to-cyan-500 text-white py-4 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Continue
-            </button>
+            <div className="flex gap-3 mt-8">
+              {onBack && (
+                <button
+                  type="button"
+                  onClick={onBack}
+                  className="flex-1 bg-white text-gray-700 border-2 border-gray-200 py-4 rounded-xl font-semibold hover:bg-gray-50 transition-all"
+                >
+                  Back
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleNext}
+                disabled={!name || !dateOfBirth || !gender || !phone}
+                className={`bg-gradient-to-r from-blue-600 to-cyan-500 text-white py-4 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed ${onBack ? 'flex-1' : 'w-full'}`}
+              >
+                Continue
+              </button>
+            </div>
           </div>
         )}
 

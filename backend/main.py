@@ -44,9 +44,27 @@ if not supabase_url or not key_to_use:
 supabase: Client = create_client(supabase_url, key_to_use)
 
 class Profile(BaseModel):
+<<<<<<< HEAD
+=======
+    id: str
+    email: Optional[str] = None
+>>>>>>> 5617faaa2fb3dd7c3115aab3dea4984b04837600
     full_name: Optional[str] = None
     phone_number: Optional[str] = None
     date_of_birth: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    zip_code: Optional[str] = None
+    blood_type: Optional[str] = None
+    height: Optional[float] = None
+    weight: Optional[float] = None
+    allergies: Optional[str] = None
+    chronic_conditions: Optional[str] = None
+    current_medications: Optional[str] = None
+    emergency_contact_name: Optional[str] = None
+    emergency_contact_phone: Optional[str] = None
+    insurance_provider: Optional[str] = None
+    insurance_number: Optional[str] = None
     medical_history: Optional[List[dict]] = []
     latitude: Optional[float] = None
     longitude: Optional[float] = None
@@ -146,6 +164,7 @@ async def get_profile(current_user=Depends(get_current_user)):
         )
     return response.data[0]
 
+<<<<<<< HEAD
 
 @app.post("/api/profile", response_model=Profile)
 async def update_profile(profile: Profile, current_user=Depends(get_current_user)):
@@ -165,6 +184,39 @@ async def update_profile(profile: Profile, current_user=Depends(get_current_user
         .execute()
     )
 
+=======
+@app.post("/profile", response_model=Profile)
+async def update_profile(profile: Profile):
+    update_data = {
+        "id": profile.id,
+        "full_name": profile.full_name,
+        "phone_number": profile.phone_number,
+        "date_of_birth": profile.date_of_birth,
+        "address": profile.address,
+        "city": profile.city,
+        "zip_code": profile.zip_code,
+        "blood_type": profile.blood_type,
+        "height": profile.height,
+        "weight": profile.weight,
+        "allergies": profile.allergies,
+        "chronic_conditions": profile.chronic_conditions,
+        "current_medications": profile.current_medications,
+        "emergency_contact_name": profile.emergency_contact_name,
+        "emergency_contact_phone": profile.emergency_contact_phone,
+        "insurance_provider": profile.insurance_provider,
+        "insurance_number": profile.insurance_number,
+        "medical_history": profile.medical_history,
+        "latitude": profile.latitude,
+        "longitude": profile.longitude
+    }
+    
+    # Also include email if provided
+    if profile.email:
+        update_data["email"] = profile.email
+
+    response = supabase.table("profiles").upsert(update_data).execute()
+    
+>>>>>>> 5617faaa2fb3dd7c3115aab3dea4984b04837600
     if not response.data:
         raise HTTPException(
             status_code=400,
