@@ -3,32 +3,22 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 interface Hospital {
-    id: string;
+    id: string | number;
     name: string;
     lat: number;
     lng: number;
     [key: string]: any;
 }
 
-const NearbyHospitalsMap: React.FC = () => {
+interface NearbyHospitalsMapProps {
+    hospitals: Hospital[];
+    center?: [number, number];
+}
+
+const NearbyHospitalsMap: React.FC<NearbyHospitalsMapProps> = ({ hospitals, center }) => {
     const mapContainer = useRef<HTMLDivElement>(null);
     const map = useRef<maplibregl.Map | null>(null);
-    const [hospitals, setHospitals] = useState<Hospital[]>([]);
-
-    // Fetch hospitals from backend
-    useEffect(() => {
-        async function fetchHospitals() {
-            try {
-                const response = await fetch('http://localhost:5000/api/hospitals');
-                if (!response.ok) throw new Error('Failed to fetch hospitals');
-                const data = await response.json();
-                setHospitals(data);
-            } catch (error) {
-                console.error('Error loading hospitals:', error);
-            }
-        }
-        fetchHospitals();
-    }, []);
+    const markersRef = useRef<maplibregl.Marker[]>([]);
 
     // Initialize Map
     useEffect(() => {
@@ -37,7 +27,7 @@ const NearbyHospitalsMap: React.FC = () => {
         map.current = new maplibregl.Map({
             container: mapContainer.current,
             style: 'http://localhost:5000/api/map-style',
-            center: [80.2707, 13.0827], // Chennai, India
+            center: center || [82.2475, 16.9891], // Use provided center or fallback (Kakinada)
             zoom: 12,
         });
 
@@ -47,11 +37,15 @@ const NearbyHospitalsMap: React.FC = () => {
             map.current?.remove();
             map.current = null;
         };
-    }, []);
+    }, [center]);
 
     // Add Markers
     useEffect(() => {
-        if (!map.current || hospitals.length === 0) return;
+        if (!map.current) return;
+
+        // Clear existing markers
+        markersRef.current.forEach(marker => marker.remove());
+        markersRef.current = [];
 
         hospitals.forEach((hospital) => {
             // Create a DOM element for the marker
@@ -68,10 +62,12 @@ const NearbyHospitalsMap: React.FC = () => {
             );
 
             // Add Marker
-            new maplibregl.Marker({ element: el })
+            const marker = new maplibregl.Marker({ element: el })
                 .setLngLat([hospital.lng, hospital.lat])
                 .setPopup(popup)
                 .addTo(map.current!);
+
+            markersRef.current.push(marker);
         });
     }, [hospitals]);
 

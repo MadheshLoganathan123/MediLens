@@ -15,6 +15,7 @@ import {
   Loader2,
   AlertCircle
 } from 'lucide-react';
+import { fetchNearbyHospitals } from '../services/hospitalService';
 import hospitalsData from '../data/hospitals.json';
 
 import { LocationCoords } from '../types';
@@ -77,57 +78,77 @@ export function NearbyHospitalsScreen({ userProfile, onBack, onSelectHospital }:
         setIsLoading(true);
         setError(null);
 
-        // Simulate network delay for realistic feel
-        await new Promise(resolve => setTimeout(resolve, 800));
-
         // Use user location if available, otherwise default center
         const userLat = userProfile?.location?.lat || DEFAULT_CENTER.lat;
         const userLng = userProfile?.location?.lng || DEFAULT_CENTER.lng;
 
-        // Process data from local JSON
-        const processedData = hospitalsData.map((item: any) => {
-          // Calculate distance
-          const distKm = calculateDistance(userLat, userLng, item.lat, item.lng);
+        // Fetch real data from Overpass API
+        const realHospitals = await fetchNearbyHospitals(userLat, userLng);
 
-          // Determine status and type if not set
-          // Randomize status for demo liveliness
+        // Process live data
+        const liveProcessed = realHospitals.map((item: any) => {
+          const distKm = calculateDistance(userLat, userLng, item.lat, item.lon);
           const isOpen = Math.random() > 0.2;
           const status = isOpen ? (Math.random() > 0.7 ? 'Busy' : 'Open') : 'Closed';
 
-          // Generate departments if missing
-          const defaultDepts = ['General Medicine', 'Emergency'];
-          const randomDepts = ['Cardiology', 'Neurology', 'Orthopedics', 'Pediatrics', 'Dermatology', 'ENT'];
-          const depts = item.specialties && item.specialties.length > 0
-            ? item.specialties
-            : [...defaultDepts, ...randomDepts.slice(0, Math.floor(Math.random() * 3))];
+          let type: 'Hospital' | 'Clinic' | 'Urgent Care' = 'Hospital';
+          if (item.tags.amenity === 'clinic' || item.tags.healthcare === 'clinic') {
+            type = 'Clinic';
+          }
 
           return {
-            id: item.id,
+            id: `live-${item.id}`,
+            name: item.name,
+            lat: item.lat,
+            lng: item.lon,
+            distance: `${distKm.toFixed(1)} km`,
+            distanceValue: distKm,
+            department: ['General Medicine', 'Emergency'],
+            status: status as 'Open' | 'Busy' | 'Closed',
+            rating: Number((3.5 + Math.random() * 1.5).toFixed(1)),
+            address: item.tags['addr:street']
+              ? `${item.tags['addr:street']}, ${item.tags['addr:city'] || ''}`
+              : 'Address not available',
+            phone: item.tags.phone || 'N/A',
+            waitTime: `${Math.floor(Math.random() * 45) + 5} min`,
+            type: type
+          };
+        });
+
+        // Process and map local JSON data
+        const localProcessed = hospitalsData.map((item: any) => {
+          const distKm = calculateDistance(userLat, userLng, item.lat, item.lng);
+
+          // Use provided data or randomize for consistency in demo
+          const isOpen = Math.random() > 0.2;
+          const status = isOpen ? (Math.random() > 0.7 ? 'Busy' : 'Open') : 'Closed';
+
+          return {
+            id: `local-${item.id}`,
             name: item.name,
             lat: item.lat,
             lng: item.lng,
             distance: `${distKm.toFixed(1)} km`,
-            distanceValue: distKm, // for sorting
-            department: depts,
+            distanceValue: distKm,
+            department: item.specialties && item.specialties.length > 0 ? item.specialties : ['General Medicine'],
             status: status as 'Open' | 'Busy' | 'Closed',
             rating: Number((3.5 + Math.random() * 1.5).toFixed(1)),
             address: item.address,
             phone: item.phone,
             waitTime: `${Math.floor(Math.random() * 45) + 5} min`,
-            type: (item.type && (item.type === 'Hospital' || item.type === 'Clinic')) ? item.type : 'Hospital'
+            type: (item.type && (item.type === 'Hospital' || item.type === 'Clinic' || item.type === 'Urgent Care')) ? item.type : 'Hospital'
           };
         });
 
-        // Filter valid items and sort by distance
-        const validHospitals = processedData
-          .filter((h: any) => !isNaN(h.distanceValue))
+        // Combine and sort by distance
+        const combinedHospitals = [...liveProcessed, ...localProcessed]
           .sort((a: any, b: any) => a.distanceValue - b.distanceValue)
-          .slice(0, 100); // Limit to closest 100 for performance
+          .slice(0, 100);
 
-        setHospitals(validHospitals as Hospital[]);
+        setHospitals(combinedHospitals as Hospital[]);
       } catch (err) {
         console.error('Failed to load hospitals:', err);
-        setError('Unable to load hospital data. Please seek assistance.');
+        setError('Unable to fetch live hospital data. Please check your connection.');
       } finally {
         setIsLoading(false);
       }
@@ -299,7 +320,10 @@ export function NearbyHospitalsScreen({ userProfile, onBack, onSelectHospital }:
     // Map View
     return (
       <div className="flex-1 relative z-0">
-        <NearbyHospitalsMap />
+        <NearbyHospitalsMap
+          hospitals={filteredHospitals}
+          center={[userProfile?.location?.lng || DEFAULT_CENTER.lng, userProfile?.location?.lat || DEFAULT_CENTER.lat]}
+        />
 
         {/* Floating List Toggle */}
         <div className="absolute bottom-20 right-6 z-[1000]">

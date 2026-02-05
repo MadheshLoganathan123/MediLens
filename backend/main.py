@@ -37,9 +37,23 @@ supabase: Client = create_client(url, key)
 
 class Profile(BaseModel):
     id: str
+    email: Optional[str] = None
     full_name: Optional[str] = None
     phone_number: Optional[str] = None
     date_of_birth: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    zip_code: Optional[str] = None
+    blood_type: Optional[str] = None
+    height: Optional[float] = None
+    weight: Optional[float] = None
+    allergies: Optional[str] = None
+    chronic_conditions: Optional[str] = None
+    current_medications: Optional[str] = None
+    emergency_contact_name: Optional[str] = None
+    emergency_contact_phone: Optional[str] = None
+    insurance_provider: Optional[str] = None
+    insurance_number: Optional[str] = None
     medical_history: Optional[List[dict]] = []
     latitude: Optional[float] = None
     longitude: Optional[float] = None
@@ -61,15 +75,34 @@ async def get_profile(user_id: str):
 
 @app.post("/profile", response_model=Profile)
 async def update_profile(profile: Profile):
-    response = supabase.table("profiles").upsert({
+    update_data = {
         "id": profile.id,
         "full_name": profile.full_name,
         "phone_number": profile.phone_number,
         "date_of_birth": profile.date_of_birth,
+        "address": profile.address,
+        "city": profile.city,
+        "zip_code": profile.zip_code,
+        "blood_type": profile.blood_type,
+        "height": profile.height,
+        "weight": profile.weight,
+        "allergies": profile.allergies,
+        "chronic_conditions": profile.chronic_conditions,
+        "current_medications": profile.current_medications,
+        "emergency_contact_name": profile.emergency_contact_name,
+        "emergency_contact_phone": profile.emergency_contact_phone,
+        "insurance_provider": profile.insurance_provider,
+        "insurance_number": profile.insurance_number,
         "medical_history": profile.medical_history,
         "latitude": profile.latitude,
         "longitude": profile.longitude
-    }).execute()
+    }
+    
+    # Also include email if provided
+    if profile.email:
+        update_data["email"] = profile.email
+
+    response = supabase.table("profiles").upsert(update_data).execute()
     
     if not response.data:
         raise HTTPException(status_code=400, detail="Failed to update profile")

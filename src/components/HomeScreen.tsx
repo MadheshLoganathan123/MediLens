@@ -19,7 +19,8 @@ import {
   Target,
   Smartphone,
   BookOpen,
-  Phone
+  Phone,
+  LogOut
 } from 'lucide-react';
 
 interface UserProfile {
@@ -38,6 +39,7 @@ interface HomeScreenProps {
   onNavigateToMedications?: () => void;
   onNavigateToAppointments?: () => void;
   onSignOut?: () => void;
+  onEditProfile?: () => void;
 }
 
 const mockCases = [
@@ -57,14 +59,15 @@ const mockCases = [
   },
 ];
 
-export function HomeScreen({ userProfile, onStartReport, onNavigateToHospitals, onNavigateToCases, onNavigateToMedications, onNavigateToAppointments, onSignOut }: HomeScreenProps) {
+export function HomeScreen({ userProfile, onStartReport, onNavigateToHospitals, onNavigateToCases, onNavigateToMedications, onNavigateToAppointments, onSignOut, onEditProfile }: HomeScreenProps) {
   const [activeTab, setActiveTab] = useState<'home' | 'health' | 'care' | 'profile'>('home');
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
 
   return (
     <div className="h-full w-full flex flex-col bg-gradient-to-br from-blue-50 via-white to-blue-50">
       {/* Header */}
       <div className="bg-gradient-to-r from-blue-600 to-cyan-500 px-6 pt-12 pb-8 rounded-b-3xl shadow-lg">
-          <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-6">
           <div>
             <p className="text-blue-100 text-sm">Welcome back,</p>
             <h1 className="text-white text-2xl font-bold mt-1">
@@ -76,7 +79,7 @@ export function HomeScreen({ userProfile, onStartReport, onNavigateToHospitals, 
               <Bell className="w-6 h-6 text-white" />
             </button>
             <button
-              onClick={() => onSignOut?.()}
+              onClick={() => setShowSignOutConfirm(true)}
               className="bg-white/10 text-white/95 px-3 py-2 rounded-xl text-sm font-medium hover:bg-white/20 transition-all"
             >
               Sign Out
@@ -182,8 +185,8 @@ export function HomeScreen({ userProfile, onStartReport, onNavigateToHospitals, 
                         </span>
                         <span
                           className={`text-xs px-2 py-1 rounded-full ${case_.status === 'Resolved'
-                              ? 'bg-green-100 text-green-700'
-                              : 'bg-yellow-100 text-yellow-700'
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-yellow-100 text-yellow-700'
                             }`}
                         >
                           {case_.status}
@@ -192,8 +195,8 @@ export function HomeScreen({ userProfile, onStartReport, onNavigateToHospitals, 
                     </div>
                     <span
                       className={`px-2 py-1 rounded-full text-xs font-medium ${case_.priority === 'Medium'
-                          ? 'bg-orange-100 text-orange-700'
-                          : 'bg-blue-100 text-blue-700'
+                        ? 'bg-orange-100 text-orange-700'
+                        : 'bg-blue-100 text-blue-700'
                         }`}
                     >
                       {case_.priority}
@@ -238,7 +241,10 @@ export function HomeScreen({ userProfile, onStartReport, onNavigateToHospitals, 
             </div>
           </div>
 
-          <button className="w-full bg-white text-gray-700 border border-gray-200 py-4 rounded-xl font-semibold shadow-sm hover:shadow-md transition-all flex items-center justify-center space-x-2">
+          <button
+            onClick={onEditProfile}
+            className="w-full bg-white text-gray-700 border border-gray-200 py-4 rounded-xl font-semibold shadow-sm hover:shadow-md transition-all flex items-center justify-center space-x-2"
+          >
             <Settings className="w-5 h-5" />
             <span>Edit Profile</span>
           </button>

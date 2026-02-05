@@ -14,7 +14,7 @@ import { MyCasesScreen } from './components/MyCasesScreen';
 import { MedicationsScreen } from './components/MedicationsScreen';
 import { AppointmentsScreen } from './components/AppointmentsScreen';
 
-type Screen = 'splash' | 'login' | 'signup' | 'profile-setup' | 'home' | 'report-health' | 'symptom-form' | 'analysis-result' | 'nearby-hospitals' | 'case-status' | 'my-cases' | 'medications' | 'appointments';
+type Screen = 'splash' | 'login' | 'signup' | 'profile-setup' | 'profile-edit' | 'home' | 'report-health' | 'symptom-form' | 'analysis-result' | 'nearby-hospitals' | 'case-status' | 'my-cases' | 'medications' | 'appointments';
 
 interface UserProfile {
   name: string;
@@ -211,7 +211,7 @@ export default function App() {
 
         const { error: insertErr } = await supabase
           .from('profiles')
-          .insert(profilePayload, { returning: 'minimal' });
+          .insert([profilePayload]);
 
         if (insertErr) {
           // If profile creation fails due to RLS or other reasons, log it; onAuthStateChange will prompt profile setup
@@ -242,18 +242,34 @@ export default function App() {
     setCurrentScreen('signup');
   }
 
-  async function handleProfileSetup(profile: UserProfile) {
+  async function handleProfileSetup(profile: any) {
     if (!session?.user) return;
 
     const profileData = {
       id: session.user.id,
       full_name: profile.name,
+      phone_number: profile.phone,
+      date_of_birth: profile.dateOfBirth,
+      address: profile.address,
+      city: profile.city,
+      zip_code: profile.zipCode,
+      blood_type: profile.bloodType,
+      height: profile.height ? parseFloat(profile.height) : null,
+      weight: profile.weight ? parseFloat(profile.weight) : null,
+      allergies: profile.allergies,
+      chronic_conditions: profile.chronicConditions,
+      current_medications: profile.currentMedications,
+      emergency_contact_name: profile.emergencyContactName,
+      emergency_contact_phone: profile.emergencyContactPhone,
+      insurance_provider: profile.insuranceProvider,
+      insurance_number: profile.insuranceNumber,
       updated_at: new Date().toISOString(),
       medical_history: profile.medicalInfo ? [{ info: profile.medicalInfo, date: new Date().toISOString() }] : [],
       latitude: profile.latitude,
       longitude: profile.longitude
     };
 
+    // Use Supabase directly for setup
     const { data, error } = await supabase
       .from('profiles')
       .upsert(profileData)
@@ -265,6 +281,56 @@ export default function App() {
     } else {
       setUserProfile(data);
       setCurrentScreen('home');
+    }
+  }
+
+  async function handleProfileUpdate(profile: any) {
+    if (!session?.user) return;
+
+    const profileData = {
+      id: session.user.id,
+      email: session.user.email,
+      full_name: profile.name,
+      phone_number: profile.phone,
+      date_of_birth: profile.dateOfBirth,
+      address: profile.address,
+      city: profile.city,
+      zip_code: profile.zipCode,
+      blood_type: profile.bloodType,
+      height: profile.height ? parseFloat(profile.height) : null,
+      weight: profile.weight ? parseFloat(profile.weight) : null,
+      allergies: profile.allergies,
+      chronic_conditions: profile.chronicConditions,
+      current_medications: profile.currentMedications,
+      emergency_contact_name: profile.emergencyContactName,
+      emergency_contact_phone: profile.emergencyContactPhone,
+      insurance_provider: profile.insuranceProvider,
+      insurance_number: profile.insuranceNumber,
+      latitude: profile.latitude,
+      longitude: profile.longitude,
+      medical_history: userProfile?.medical_history || []
+    };
+
+    try {
+      // Call FastAPI backend for profile update
+      const response = await fetch('http://localhost:5000/profile', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(profileData),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update profile on server');
+      }
+
+      const updatedProfile = await response.json();
+      setUserProfile(updatedProfile);
+      setCurrentScreen('home');
+    } catch (err: any) {
+      console.error('Profile update error:', err);
+      alert('Error updating profile: ' + err.message);
     }
   }
 
@@ -373,13 +439,51 @@ export default function App() {
       case 'home':
         return (
           <HomeScreen
-            userProfile={userProfile}
+            userProfile={{
+              name: userProfile?.full_name || userProfile?.name || 'User',
+              email: userProfile?.email || session?.user?.email || '',
+              age: userProfile?.age || '',
+              gender: userProfile?.gender || '',
+              medicalInfo: userProfile?.medical_history && userProfile.medical_history.length > 0
+                ? userProfile.medical_history[0].info
+                : ''
+            }}
             onStartReport={handleStartReport}
             onNavigateToHospitals={handleNavigateToHospitals}
             onNavigateToCases={handleNavigateToCases}
             onSignOut={handleSignOut}
+            onEditProfile={() => setCurrentScreen('profile-edit')}
             onNavigateToMedications={() => setCurrentScreen('medications')}
             onNavigateToAppointments={() => setCurrentScreen('appointments')}
+          />
+        );
+      case 'profile-edit':
+        return (
+          <EnhancedProfileSetupScreen
+            initialProfile={{
+              name: userProfile?.full_name,
+              email: userProfile?.email || session?.user?.email,
+              dateOfBirth: userProfile?.date_of_birth,
+              address: userProfile?.address,
+              city: userProfile?.city,
+              zipCode: userProfile?.zip_code,
+              bloodType: userProfile?.blood_type,
+              height: userProfile?.height,
+              weight: userProfile?.weight,
+              phone: userProfile?.phone_number,
+              gender: userProfile?.gender,
+              allergies: userProfile?.allergies,
+              chronicConditions: userProfile?.chronic_conditions,
+              currentMedications: userProfile?.current_medications,
+              emergencyContactName: userProfile?.emergency_contact_name,
+              emergencyContactPhone: userProfile?.emergency_contact_phone,
+              insuranceProvider: userProfile?.insurance_provider,
+              insuranceNumber: userProfile?.insurance_number,
+              latitude: userProfile?.latitude,
+              longitude: userProfile?.longitude
+            }}
+            onComplete={handleProfileUpdate}
+            onBack={() => setCurrentScreen('home')}
           />
         );
       case 'report-health':
