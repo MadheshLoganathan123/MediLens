@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from './lib/supabaseClient';
+import { apiFetch, ApiError, analyzeIssue } from './lib/apiClient';
 import { SplashScreen } from './components/SplashScreen';
 import { LoginScreen } from './components/LoginScreen';
 import { SignupScreen } from './components/SignupScreen';
@@ -26,15 +27,20 @@ interface UserProfile {
   longitude?: number;
 }
 
-export default function App() {
+type AppProps = {
+  initialScreen?: Screen;
+};
+
+export default function App({ initialScreen = 'splash' }: AppProps) {
   const [session, setSession] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [currentScreen, setCurrentScreen] = useState<Screen>('splash');
+  const [currentScreen, setCurrentScreen] = useState<Screen>(initialScreen);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [reportData, setReportData] = useState<{
     method?: 'image' | 'text' | 'voice';
     symptoms?: string;
     images?: File[];
+    aiAnalysis?: string;
   }>({});
   const [selectedCaseId, setSelectedCaseId] = useState<string>('');
   // snapshot for restoring transient Home UI state when navigating away
@@ -124,42 +130,39 @@ export default function App() {
     try {
       setIsHandlingSession(true);
 
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', session.user.id)
-        .maybeSingle();
+      try {
+        const data = await apiFetch<any>('/profile');
 
-      // if there's an explicit error from the client/runtime, bubble it
-      if (error) {
-        if (error.message?.includes('AbortError') || error.code === 'ABORT_ERR') {
-          console.warn('Request aborted, retrying...');
-          setIsHandlingSession(false);
-          return;
+        if (!data) {
+          console.warn('No profile data returned for user:', session.user.id);
+          setUserProfile(null);
+          setCurrentScreen('profile-setup');
+        } else {
+          setUserProfile(data);
+          if (currentScreen === 'login' || currentScreen === 'signup' || currentScreen === 'splash') {
+            setCurrentScreen('home');
+          }
         }
-        console.error('Error fetching profile:', error);
-        throw error;
-      }
+      } catch (err: any) {
+        const apiErr = err as ApiError;
 
-      // If data is null, user has no profile yet — direct them to profile setup
-      if (!data) {
-        console.warn('No profile found for user:', session.user.id);
-        setUserProfile(null);
-        setCurrentScreen('profile-setup');
-      } else {
-        setUserProfile(data);
-        if (currentScreen === 'login' || currentScreen === 'signup' || currentScreen === 'splash') {
-          setCurrentScreen('home');
+        if (apiErr.code === 'PROFILE_NOT_FOUND' || apiErr.status === 404) {
+          console.warn('No profile found for user:', session.user.id);
+          setUserProfile(null);
+          setCurrentScreen('profile-setup');
+        } else if (apiErr.code === 'TOKEN_EXPIRED' || apiErr.status === 401) {
+          console.warn('Token expired while fetching profile, redirecting to login');
+          setSession(null);
+          setUserProfile(null);
+          setCurrentScreen('login');
+        } else {
+          console.error('Error fetching profile from API:', apiErr);
         }
+      } finally {
+        setIsHandlingSession(false);
       }
     } catch (err: any) {
-      // Silently handle abort errors
-      if (err?.message?.includes('AbortError') || err?.code === 'ABORT_ERR') {
-        console.warn('Session handling aborted, will retry on next auth change');
-      } else {
-        console.error('Error in handleSession:', err);
-      }
-    } finally {
+      console.error('Error in handleSession:', err);
       setIsHandlingSession(false);
     }
   }
@@ -244,27 +247,27 @@ export default function App() {
 
   async function handleProfileSetup(profile: UserProfile) {
     if (!session?.user) return;
+    try {
+      const profileData = {
+        full_name: profile.name,
+        medical_history: profile.medicalInfo
+          ? [{ info: profile.medicalInfo, date: new Date().toISOString() }]
+          : [],
+        latitude: profile.latitude,
+        longitude: profile.longitude,
+      };
 
-    const profileData = {
-      id: session.user.id,
-      full_name: profile.name,
-      updated_at: new Date().toISOString(),
-      medical_history: profile.medicalInfo ? [{ info: profile.medicalInfo, date: new Date().toISOString() }] : [],
-      latitude: profile.latitude,
-      longitude: profile.longitude
-    };
+      const data = await apiFetch('/profile', {
+        method: 'POST',
+        body: JSON.stringify(profileData),
+      });
 
-    const { data, error } = await supabase
-      .from('profiles')
-      .upsert(profileData)
-      .select()
-      .single();
-
-    if (error) {
-      alert('Error updating profile: ' + error.message);
-    } else {
       setUserProfile(data);
       setCurrentScreen('home');
+    } catch (err: any) {
+      const apiErr = err as ApiError;
+      console.error('Error updating profile via API:', apiErr);
+      alert('Error updating profile: ' + (apiErr.message || 'Unknown error'));
     }
   }
 
@@ -278,8 +281,18 @@ export default function App() {
     setCurrentScreen('symptom-form');
   };
 
-  const handleSubmitSymptoms = (symptoms: string, images?: File[]) => {
-    setReportData({ ...reportData, symptoms, images });
+  const handleSubmitSymptoms = async (symptoms: string, images?: File[]) => {
+    // Optimistically store user inputs
+    setReportData((prev) => ({ ...prev, symptoms, images }));
+
+    try {
+      const ai = await analyzeIssue(symptoms, !!(images && images.length > 0));
+      setReportData((prev) => ({ ...prev, symptoms, images, aiAnalysis: ai.analysis }));
+    } catch (err: any) {
+      console.error('AI analysis failed:', err);
+      // Keep going with just user symptoms if AI fails
+    }
+
     setCurrentScreen('analysis-result');
   };
 
@@ -401,6 +414,7 @@ export default function App() {
         return (
           <AnalysisResultScreen
             symptoms={reportData.symptoms || ''}
+            aiSummary={reportData.aiAnalysis}
             onBackToHome={handleBackToHome}
           />
         );

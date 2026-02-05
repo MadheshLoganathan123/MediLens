@@ -1,10 +1,13 @@
-from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
 import os
 from supabase import create_client, Client
 from dotenv import load_dotenv
+
+from .config import settings
+from .auth_routes import router as auth_router, get_current_user
 
 # Look for .env in current and parent directories
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
@@ -15,34 +18,47 @@ app = FastAPI(title="MediLens Patient API")
 # Enable CORS for frontend integration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, specify the frontend URL
+    allow_origins=settings.allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Supabase setup
-# Try to get variables with or without VITE_ prefix
-url: str = os.environ.get("SUPABASE_URL") or os.environ.get("VITE_SUPABASE_URL")
-key: str = os.environ.get("SUPABASE_ANON_KEY") or os.environ.get("VITE_SUPABASE_ANON_KEY")
+# Supabase setup (backend should use service role key when available)
+supabase_url: str = (
+    os.environ.get("SUPABASE_URL")
+    or os.environ.get("VITE_SUPABASE_URL")
+    or str(settings.SUPABASE_URL)
+)
 
-if not url or not key:
-    print("Error: SUPABASE_URL or SUPABASE_ANON_KEY not found in environment variables.")
-    # For local development, provide placeholders to avoid crash during start if possible, 
-    # but the client requires valid URL format.
-    url = url or "https://placeholder.supabase.co"
-    key = key or "placeholder"
+service_role_key: str | None = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or settings.SUPABASE_SERVICE_ROLE_KEY
+anon_key: str | None = os.environ.get("SUPABASE_ANON_KEY") or os.environ.get("VITE_SUPABASE_ANON_KEY")
 
-supabase: Client = create_client(url, key)
+key_to_use: str | None = service_role_key or anon_key
+
+if not supabase_url or not key_to_use:
+    raise RuntimeError(
+        "SUPABASE_URL and at least one of SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY must be set."
+    )
+
+supabase: Client = create_client(supabase_url, key_to_use)
 
 class Profile(BaseModel):
-    id: str
     full_name: Optional[str] = None
     phone_number: Optional[str] = None
     date_of_birth: Optional[str] = None
     medical_history: Optional[List[dict]] = []
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+
+
+class AnalyzeRequest(BaseModel):
+    symptoms: str
+    has_image: bool = False
+
+
+class AnalyzeResponse(BaseModel):
+    analysis: str
 
 @app.get("/")
 async def root():
@@ -52,27 +68,108 @@ async def root():
 async def health_check():
     return {"status": "healthy"}
 
-@app.get("/profile/{user_id}", response_model=Profile)
-async def get_profile(user_id: str):
-    response = supabase.table("profiles").select("*").eq("id", user_id).execute()
+
+@app.post("/api/analyze", response_model=AnalyzeResponse)
+async def analyze_issue(payload: AnalyzeRequest, current_user=Depends(get_current_user)):
+    """
+    Analyze user symptoms (and optionally presence of images) using OpenRouter AI.
+    """
+    if not settings.OPENROUTER_API_KEY:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "OPENROUTER_NOT_CONFIGURED",
+                "message": "OPENROUTER_API_KEY is not configured on the backend.",
+            },
+        )
+
+    # Build OpenRouter request payload
+    body = {
+        "model": "google/gemma-3-4b-it:free",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": (
+                            "You are a medical triage assistant. "
+                            "Given these symptoms (and the note that the user "
+                            f"{'has' if payload.has_image else 'has not'} provided images), "
+                            "provide a concise summary, possible causes, and an urgency level. "
+                            "Keep the answer under 200 words.\n\n"
+                            f"Symptoms: {payload.symptoms}"
+                        ),
+                    }
+                ],
+            }
+        ],
+    }
+
+    try:
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "http://localhost:5173",
+                "X-Title": "MediLens",
+            },
+            json=body,
+            timeout=30,
+        )
+        response.raise_for_status()
+        data = response.json()
+    except requests.RequestException as e:
+        raise HTTPException(
+            status_code=502,
+            detail={"code": "AI_BACKEND_ERROR", "message": f"AI backend error: {e}"},
+        )
+
+    try:
+        analysis_text = data["choices"][0]["message"]["content"]
+    except Exception:
+        raise HTTPException(
+            status_code=502,
+            detail={"code": "AI_RESPONSE_ERROR", "message": "Unexpected AI response format"},
+        )
+
+    return AnalyzeResponse(analysis=analysis_text)
+
+@app.get("/api/profile", response_model=Profile)
+async def get_profile(current_user=Depends(get_current_user)):
+    response = supabase.table("profiles").select("*").eq("id", current_user["id"]).execute()
     if not response.data:
-        raise HTTPException(status_code=404, detail="Profile not found")
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "PROFILE_NOT_FOUND", "message": "Profile not found"},
+        )
     return response.data[0]
 
-@app.post("/profile", response_model=Profile)
-async def update_profile(profile: Profile):
-    response = supabase.table("profiles").upsert({
-        "id": profile.id,
-        "full_name": profile.full_name,
-        "phone_number": profile.phone_number,
-        "date_of_birth": profile.date_of_birth,
-        "medical_history": profile.medical_history,
-        "latitude": profile.latitude,
-        "longitude": profile.longitude
-    }).execute()
-    
+
+@app.post("/api/profile", response_model=Profile)
+async def update_profile(profile: Profile, current_user=Depends(get_current_user)):
+    response = (
+        supabase.table("profiles")
+        .upsert(
+            {
+                "id": current_user["id"],
+                "full_name": profile.full_name,
+                "phone_number": profile.phone_number,
+                "date_of_birth": profile.date_of_birth,
+                "medical_history": profile.medical_history,
+                "latitude": profile.latitude,
+                "longitude": profile.longitude,
+            }
+        )
+        .execute()
+    )
+
     if not response.data:
-        raise HTTPException(status_code=400, detail="Failed to update profile")
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "PROFILE_UPDATE_FAILED", "message": "Failed to update profile"},
+        )
     return response.data[0]
 
 import json
@@ -116,6 +213,9 @@ async def get_hospitals():
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail="Error decoding hospitals data")
 
+app.include_router(auth_router, prefix="/api", tags=["auth"])
+
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=5000)

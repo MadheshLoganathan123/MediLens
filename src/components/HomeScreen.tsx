@@ -245,8 +245,8 @@ export function HomeScreen({ userProfile, onStartReport, onNavigateToHospitals, 
         </div>
       )}
 
-      {/* Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-4 safe-area-bottom">
+      {/* Bottom Navigation (embedded inside mobile layout) */}
+      <div className="mt-auto bg-white border-t border-gray-200 px-6 py-4 safe-area-bottom">
         <div className="flex items-center justify-around max-w-md mx-auto">
           <button
             onClick={() => setActiveTab('home')}

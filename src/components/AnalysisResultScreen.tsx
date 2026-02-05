@@ -17,6 +17,7 @@ import {
 
 interface AnalysisResultScreenProps {
   symptoms: string;
+  aiSummary?: string;
   onBackToHome: () => void;
 }
 
@@ -34,14 +35,34 @@ interface AnalysisResult {
   estimatedWaitTime?: string;
 }
 
-export function AnalysisResultScreen({ symptoms, onBackToHome }: AnalysisResultScreenProps) {
+export function AnalysisResultScreen({ symptoms, aiSummary, onBackToHome }: AnalysisResultScreenProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [result, setResult] = useState<AnalysisResult | null>(null);
 
   useEffect(() => {
-    // Simulate AI analysis
+    // If we have an AI summary from the backend, use it directly.
+    if (aiSummary) {
+      const baseResult: AnalysisResult = {
+        severity: 'medium',
+        severityScore: 60,
+        summary: aiSummary,
+        possibleConditions: ['See AI summary for details'],
+        careType: 'teleconsult',
+        careDescription: 'Use this assessment to discuss with a clinician or teleconsultation.',
+        recommendations: [
+          'Review the AI summary carefully.',
+          'Seek professional medical advice to confirm any concerns.',
+          'Monitor your symptoms for any changes or worsening.',
+        ],
+        estimatedWaitTime: 'Same day available',
+      };
+      setResult(baseResult);
+      setIsLoading(false);
+      return;
+    }
+
+    // Fallback: local heuristic if AI is unavailable
     const timer = setTimeout(() => {
-      // Mock analysis based on symptom keywords
       const lowerSymptoms = symptoms.toLowerCase();
       let mockResult: AnalysisResult;
 
@@ -100,7 +121,7 @@ export function AnalysisResultScreen({ symptoms, onBackToHome }: AnalysisResultS
     }, 2500);
 
     return () => clearTimeout(timer);
-  }, [symptoms]);
+  }, [symptoms, aiSummary]);
 
   if (isLoading) {
     return (
