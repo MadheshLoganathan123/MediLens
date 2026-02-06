@@ -323,6 +323,13 @@ export function NearbyHospitalsScreen({ userProfile, onBack, onSelectHospital }:
         <NearbyHospitalsMap
           hospitals={filteredHospitals}
           center={[userProfile?.location?.lng || DEFAULT_CENTER.lng, userProfile?.location?.lat || DEFAULT_CENTER.lat]}
+          userLocation={userProfile?.location ? { 
+            lat: userProfile.location.lat, 
+            lng: userProfile.location.lng 
+          } : { 
+            lat: DEFAULT_CENTER.lat, 
+            lng: DEFAULT_CENTER.lng 
+          }}
         />
 
         {/* Floating List Toggle */}

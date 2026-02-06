@@ -4,70 +4,140 @@ import {
   useEffect,
   useState,
   ReactNode,
+  useCallback,
 } from "react";
-import type { Session, User } from "@supabase/supabase-js";
-import { supabase } from "../lib/supabaseClient";
+import * as api from "../lib/apiClient";
+
+interface User {
+  id: string;
+  email: string;
+}
 
 type AuthContextType = {
   user: User | null;
-  session: Session | null;
   loading: boolean;
+  error: string | null;
   signUp(email: string, password: string): Promise<void>;
   signIn(email: string, password: string): Promise<void>;
   signOut(): Promise<void>;
+  clearError(): void;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
+  // Initialize auth on mount (check if token exists)
   useEffect(() => {
     let isMounted = true;
 
-    supabase.auth
-      .getSession()
-      .then(({ data }) => {
-        if (!isMounted) return;
-        setSession(data.session);
-        setUser(data.session?.user ?? null);
-      })
-      .finally(() => {
-        if (isMounted) setLoading(false);
-      });
+    const initializeAuth = async () => {
+      try {
+        const token = api.getAccessToken();
+        
+        if (token) {
+          // Try to verify token by calling /api/auth/me
+          try {
+            const response = await api.apiFetch<{ user: User }>("/auth/me");
+            if (isMounted) {
+              setUser(response.user);
+              setError(null);
+            }
+          } catch (err) {
+            // Token is invalid, clear it
+            if (isMounted) {
+              api.logout();
+              setUser(null);
+            }
+          }
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      setSession(newSession);
-      setUser(newSession?.user ?? null);
-    });
+    initializeAuth();
 
     return () => {
       isMounted = false;
-      subscription.unsubscribe();
     };
   }, []);
 
-  const signUp = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signUp({ email, password });
-    if (error) throw error;
-  };
+  const signUp = useCallback(async (email: string, password: string) => {
+    setError(null);
+    // Clear current user before attempting signup to prevent account mixing
+    setUser(null);
+    try {
+      const response = await api.register(email, password);
+      // Verify the response contains the correct user data
+      if (!response.user || !response.user.id || !response.user.email) {
+        throw new Error("Invalid registration response");
+      }
+      console.log('[AuthContext] Setting user:', response.user.email);
+      setUser(response.user);
+    } catch (err: any) {
+      const message = err?.message || "Signup failed";
+      setError(message);
+      // Ensure user is cleared on error
+      setUser(null);
+      throw err;
+    }
+  }, []);
 
-  const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
-  };
+  const signIn = useCallback(async (email: string, password: string) => {
+    setError(null);
+    // Clear current user before attempting login to prevent account mixing
+    setUser(null);
+    try {
+      const response = await api.login(email, password);
+      // Verify the response contains the correct user data
+      if (!response.user || !response.user.id || !response.user.email) {
+        throw new Error("Invalid login response");
+      }
+      console.log('[AuthContext] Setting user:', response.user.email);
+      setUser(response.user);
+    } catch (err: any) {
+      const message = err?.message || "Sign in failed";
+      setError(message);
+      // Ensure user is cleared on error
+      setUser(null);
+      throw err;
+    }
+  }, []);
 
-  const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
+  const signOut = useCallback(async () => {
+    setError(null);
+    try {
+      api.logout();
+      setUser(null);
+    } catch (err: any) {
+      const message = err?.message || "Sign out failed";
+      setError(message);
+      throw err;
+    }
+  }, []);
+
+  const clearError = useCallback(() => {
+    setError(null);
+  }, []);
+
+  const value: AuthContextType = {
+    user,
+    loading,
+    error,
+    signUp,
+    signIn,
+    signOut,
+    clearError,
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, signUp, signIn, signOut }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
@@ -80,4 +150,3 @@ export function useAuth() {
   }
   return ctx;
 }
-

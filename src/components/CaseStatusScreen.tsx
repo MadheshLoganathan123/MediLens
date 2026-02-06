@@ -1,28 +1,28 @@
+import { useState, useEffect } from 'react';
 import { 
   ChevronLeft, 
   FileText, 
-  User, 
-  MapPin, 
-  Phone, 
+  AlertCircle,
   Calendar,
   Clock,
   CheckCircle,
   Circle,
-  AlertCircle,
   Download,
-  MessageCircle,
-  Video
+  RefreshCw,
+  Loader
 } from 'lucide-react';
+import { getCase, updateCase } from '@/lib/apiClient';
+import type { HealthCase } from '@/types';
 
 interface CaseStatusScreenProps {
   caseId: string;
   onBack: () => void;
 }
 
-type CaseStatus = 'Submitted' | 'Reviewed' | 'Accepted' | 'Scheduled' | 'Completed';
+type DisplayStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
 
 interface StatusStep {
-  status: CaseStatus;
+  status: DisplayStatus;
   label: string;
   completed: boolean;
   active: boolean;
@@ -31,71 +31,180 @@ interface StatusStep {
 }
 
 export function CaseStatusScreen({ caseId, onBack }: CaseStatusScreenProps) {
-  // Mock case data
-  const currentStatus: CaseStatus = 'Scheduled';
-  
-  const statusSteps: StatusStep[] = [
-    {
-      status: 'Submitted',
-      label: 'Submitted',
-      completed: true,
-      active: false,
-      timestamp: '2026-02-01, 10:30 AM',
-      description: 'Your case has been submitted successfully'
-    },
-    {
-      status: 'Reviewed',
-      label: 'Reviewed',
-      completed: true,
-      active: false,
-      timestamp: '2026-02-01, 11:45 AM',
-      description: 'Medical team reviewed your symptoms'
-    },
-    {
-      status: 'Accepted',
-      label: 'Accepted',
-      completed: true,
-      active: false,
-      timestamp: '2026-02-01, 02:15 PM',
-      description: 'Case accepted by Dr. Sarah Johnson'
-    },
-    {
-      status: 'Scheduled',
-      label: 'Scheduled',
-      completed: false,
-      active: true,
-      timestamp: '2026-02-03, 09:00 AM',
-      description: 'Appointment scheduled'
-    },
-    {
-      status: 'Completed',
-      label: 'Completed',
-      completed: false,
-      active: false,
-    },
-  ];
+  const [caseData, setCaseData] = useState<HealthCase | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
 
-  const mockCase = {
-    id: caseId,
-    issueType: 'Fever and Headache',
-    severity: 'Medium',
-    submittedDate: '2026-02-01',
-    appointmentDate: '2026-02-03',
-    appointmentTime: '09:00 AM',
-    doctor: {
-      name: 'Dr. Sarah Johnson',
-      specialty: 'General Physician',
-      avatar: '👩‍⚕️',
-    },
-    hospital: {
-      name: 'City General Hospital',
-      address: '123 Medical Plaza, New York, NY 10001',
-      phone: '+1 (555) 123-4567',
-      department: 'General Medicine',
-    },
-    symptoms: 'Persistent headache for 3 days with mild fever (99.5°F)',
-    notes: 'Patient advised to fast 8 hours before appointment for blood work.',
+  // Fetch case data on mount
+  useEffect(() => {
+    const fetchCaseData = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        if (!caseId || !caseId.trim()) {
+          setError('Invalid case ID. Please select a case from the list.');
+          return;
+        }
+        const data = await getCase(caseId);
+        setCaseData(data);
+      } catch (err: any) {
+        console.error('Failed to fetch case:', err);
+        setError(err.message || 'Failed to load case details');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (caseId) {
+      fetchCaseData();
+    } else {
+      setError('No case selected. Please go back and select a case.');
+      setIsLoading(false);
+    }
+  }, [caseId]);
+
+  // Map API status to display status
+  const mapStatusToDisplay = (status: string): DisplayStatus => {
+    switch (status?.toLowerCase()) {
+      case 'open':
+        return 'open';
+      case 'in_progress':
+        return 'in_progress';
+      case 'resolved':
+        return 'resolved';
+      case 'closed':
+        return 'closed';
+      default:
+        return 'open';
+    }
   };
+
+  // Build status steps based on current status
+  const getStatusSteps = (): StatusStep[] => {
+    const currentStatus = caseData?.status ? mapStatusToDisplay(caseData.status) : 'open';
+    const submittedDate = caseData?.created_at ? new Date(caseData.created_at).toLocaleString() : 'Not available';
+
+    const steps: StatusStep[] = [
+      {
+        status: 'open',
+        label: 'Submitted',
+        completed: ['in_progress', 'resolved', 'closed'].includes(currentStatus),
+        active: currentStatus === 'open',
+        timestamp: submittedDate,
+        description: 'Your case has been submitted successfully'
+      },
+      {
+        status: 'in_progress',
+        label: 'In Progress',
+        completed: ['resolved', 'closed'].includes(currentStatus),
+        active: currentStatus === 'in_progress',
+        description: 'Your case is being reviewed'
+      },
+      {
+        status: 'resolved',
+        label: 'Resolved',
+        completed: currentStatus === 'resolved',
+        active: false,
+        description: 'Case has been resolved'
+      },
+      {
+        status: 'closed',
+        label: 'Closed',
+        completed: currentStatus === 'closed',
+        active: false,
+        description: 'Case is archived'
+      },
+    ];
+
+    return steps;
+  };
+
+  const handleStatusUpdate = async (newStatus: DisplayStatus) => {
+    if (!caseData || isUpdating) return;
+
+    try {
+      setIsUpdating(true);
+      setUpdateError(null);
+      const updated = await updateCase(caseData.id, { status: newStatus });
+      setCaseData(updated);
+    } catch (err: any) {
+      console.error('Failed to update case status:', err);
+      setUpdateError(err.message || 'Failed to update case status. Please try again.');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="h-full w-full flex flex-col bg-gradient-to-br from-blue-50 via-white to-blue-50">
+        <div className="bg-gradient-to-r from-blue-600 to-cyan-500 px-6 pt-12 pb-6 rounded-b-3xl shadow-lg">
+          <button
+            onClick={onBack}
+            className="mb-6 flex items-center text-white hover:text-blue-100 transition-colors"
+          >
+            <ChevronLeft className="w-6 h-6 mr-1" />
+            <span className="font-medium">Back</span>
+          </button>
+        </div>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading case details...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !caseData) {
+    return (
+      <div className="h-full w-full flex flex-col bg-gradient-to-br from-blue-50 via-white to-blue-50">
+        <div className="bg-gradient-to-r from-blue-600 to-cyan-500 px-6 pt-12 pb-6 rounded-b-3xl shadow-lg">
+          <button
+            onClick={onBack}
+            className="mb-6 flex items-center text-white hover:text-blue-100 transition-colors"
+          >
+            <ChevronLeft className="w-6 h-6 mr-1" />
+            <span className="font-medium">Back</span>
+          </button>
+        </div>
+        <div className="flex-1 flex items-center justify-center px-6">
+          <div className="text-center">
+            <div className="bg-red-100 p-6 rounded-full mb-4 inline-block">
+              <AlertCircle className="w-12 h-12 text-red-600" />
+            </div>
+            <h3 className="font-semibold text-gray-900 mb-2">Failed to load case</h3>
+            <p className="text-gray-600 text-sm mb-4">{error || 'Case not found'}</p>
+            <button
+              onClick={onBack}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
+            >
+              Go Back
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const statusSteps = getStatusSteps();
+  const currentStatus = mapStatusToDisplay(caseData.status);
+  const severityColor = caseData.severity 
+    ? caseData.severity === 'low' 
+      ? 'bg-green-100 text-green-700'
+      : caseData.severity === 'medium'
+        ? 'bg-yellow-100 text-yellow-700'
+        : caseData.severity === 'high'
+          ? 'bg-orange-100 text-orange-700'
+          : 'bg-red-100 text-red-700'
+    : 'bg-gray-100 text-gray-700';
+
+  const severityLabel = caseData.severity 
+    ? caseData.severity.charAt(0).toUpperCase() + caseData.severity.slice(1)
+    : 'Not specified';
 
   return (
     <div className="h-full w-full flex flex-col bg-gradient-to-br from-blue-50 via-white to-blue-50">
@@ -112,19 +221,15 @@ export function CaseStatusScreen({ caseId, onBack }: CaseStatusScreenProps) {
         <div className="flex items-start justify-between mb-4">
           <div className="flex-1">
             <div className="flex items-center space-x-2 mb-2">
-              <span className="text-blue-100 text-sm">Case ID: #{caseId}</span>
+              <span className="text-blue-100 text-sm">Case ID: #{caseData.id.substring(0, 8)}</span>
             </div>
-            <h1 className="text-white text-3xl font-bold mb-2">{mockCase.issueType}</h1>
-            <div className="flex items-center space-x-2">
-              <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                mockCase.severity === 'Low' ? 'bg-green-100 text-green-700' :
-                mockCase.severity === 'Medium' ? 'bg-yellow-100 text-yellow-700' :
-                'bg-red-100 text-red-700'
-              }`}>
-                {mockCase.severity} Priority
+            <h1 className="text-white text-3xl font-bold mb-2">{caseData.category || 'Health Case'}</h1>
+            <div className="flex items-center space-x-2 flex-wrap">
+              <span className={`px-3 py-1 rounded-full text-xs font-semibold ${severityColor}`}>
+                {severityLabel} Priority
               </span>
               <span className="bg-white/20 backdrop-blur-sm text-white px-3 py-1 rounded-full text-xs font-semibold">
-                {currentStatus}
+                {currentStatus === 'open' ? 'Open' : currentStatus === 'in_progress' ? 'In Progress' : currentStatus === 'resolved' ? 'Resolved' : 'Closed'}
               </span>
             </div>
           </div>
@@ -195,120 +300,22 @@ export function CaseStatusScreen({ caseId, onBack }: CaseStatusScreenProps) {
           </div>
         </div>
 
-        {/* Appointment Details */}
-        {currentStatus === 'Scheduled' && (
-          <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-2xl shadow-md p-6 mb-6 border-2 border-blue-200">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-bold text-gray-900 text-lg flex items-center">
-                <Calendar className="w-5 h-5 mr-2 text-blue-600" />
-                Upcoming Appointment
-              </h2>
-              <span className="bg-blue-600 text-white px-3 py-1 rounded-full text-xs font-semibold">
-                Confirmed
-              </span>
-            </div>
-
-            <div className="bg-white rounded-xl p-4 mb-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-gray-600">Date & Time</span>
-                <span className="font-semibold text-gray-900">
-                  {mockCase.appointmentDate} • {mockCase.appointmentTime}
-                </span>
-              </div>
-              <div className="h-px bg-gray-200 my-3"></div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-gray-600">Department</span>
-                <span className="font-semibold text-gray-900">{mockCase.hospital.department}</span>
-              </div>
-            </div>
-
-            <div className="flex gap-2">
-              <button className="flex-1 bg-white text-gray-700 border-2 border-gray-200 py-3 rounded-xl font-semibold hover:bg-gray-50 transition-all flex items-center justify-center space-x-2">
-                <Calendar className="w-5 h-5" />
-                <span>Reschedule</span>
-              </button>
-              <button className="flex-1 bg-red-50 text-red-600 border-2 border-red-200 py-3 rounded-xl font-semibold hover:bg-red-100 transition-all flex items-center justify-center space-x-2">
-                <AlertCircle className="w-5 h-5" />
-                <span>Cancel</span>
-              </button>
+        {/* AI Analysis */}
+        {caseData.ai_analysis && (
+          <div className="bg-white rounded-2xl shadow-md p-6 mb-6 border border-gray-100">
+            <h2 className="font-bold text-gray-900 text-lg mb-4 flex items-center">
+              <AlertCircle className="w-5 h-5 mr-2 text-blue-600" />
+              AI Analysis
+            </h2>
+            <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
+              <p className="text-sm text-gray-700">
+                {typeof caseData.ai_analysis === 'string'
+                  ? caseData.ai_analysis
+                  : caseData.ai_analysis?.analysis || caseData.ai_analysis?.summary || JSON.stringify(caseData.ai_analysis)}
+              </p>
             </div>
           </div>
         )}
-
-        {/* Doctor Info Card */}
-        <div className="bg-white rounded-2xl shadow-md p-5 mb-6 border border-gray-100">
-          <h2 className="font-bold text-gray-900 text-lg mb-4 flex items-center">
-            <User className="w-5 h-5 mr-2 text-blue-600" />
-            Assigned Doctor
-          </h2>
-
-          <div className="flex items-start space-x-4 mb-4">
-            <div className="w-16 h-16 bg-gradient-to-br from-blue-100 to-cyan-100 rounded-full flex items-center justify-center text-3xl">
-              {mockCase.doctor.avatar}
-            </div>
-            <div className="flex-1">
-              <h3 className="font-bold text-gray-900 text-lg">{mockCase.doctor.name}</h3>
-              <p className="text-sm text-gray-600 mb-2">{mockCase.doctor.specialty}</p>
-              <div className="flex items-center space-x-1">
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <svg
-                    key={star}
-                    className="w-4 h-4 text-yellow-400 fill-current"
-                    viewBox="0 0 20 20"
-                  >
-                    <path d="M10 15l-5.878 3.09 1.123-6.545L.489 6.91l6.572-.955L10 0l2.939 5.955 6.572.955-4.756 4.635 1.123 6.545z" />
-                  </svg>
-                ))}
-                <span className="text-sm text-gray-600 ml-2">5.0</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <button className="bg-blue-50 text-blue-600 py-2.5 rounded-xl font-semibold hover:bg-blue-100 transition-all flex items-center justify-center space-x-2">
-              <MessageCircle className="w-4 h-4" />
-              <span>Message</span>
-            </button>
-            <button className="bg-green-50 text-green-600 py-2.5 rounded-xl font-semibold hover:bg-green-100 transition-all flex items-center justify-center space-x-2">
-              <Video className="w-4 h-4" />
-              <span>Video Call</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Hospital Info Card */}
-        <div className="bg-white rounded-2xl shadow-md p-5 mb-6 border border-gray-100">
-          <h2 className="font-bold text-gray-900 text-lg mb-4 flex items-center">
-            <MapPin className="w-5 h-5 mr-2 text-blue-600" />
-            Hospital Information
-          </h2>
-
-          <div className="space-y-3">
-            <div>
-              <h3 className="font-semibold text-gray-900">{mockCase.hospital.name}</h3>
-              <p className="text-sm text-gray-600 mt-1">{mockCase.hospital.address}</p>
-            </div>
-
-            <div className="h-px bg-gray-200"></div>
-
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-600">Phone</span>
-              <a href={`tel:${mockCase.hospital.phone}`} className="text-blue-600 font-medium text-sm">
-                {mockCase.hospital.phone}
-              </a>
-            </div>
-
-            <div className="flex gap-2 pt-2">
-              <button className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-semibold hover:bg-blue-700 transition-all flex items-center justify-center space-x-2">
-                <Phone className="w-5 h-5" />
-                <span>Call Hospital</span>
-              </button>
-              <button className="bg-white border-2 border-gray-200 text-gray-700 p-3 rounded-xl hover:bg-gray-50 transition-all">
-                <MapPin className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-        </div>
 
         {/* Case Details */}
         <div className="bg-white rounded-2xl shadow-md p-5 mb-6 border border-gray-100">
@@ -320,36 +327,87 @@ export function CaseStatusScreen({ caseId, onBack }: CaseStatusScreenProps) {
           <div className="space-y-3">
             <div>
               <h4 className="text-sm font-semibold text-gray-700 mb-1">Symptoms Reported</h4>
-              <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">{mockCase.symptoms}</p>
+              <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">{caseData.symptoms}</p>
             </div>
 
-            {mockCase.notes && (
+            {caseData.category && (
               <div>
-                <h4 className="text-sm font-semibold text-gray-700 mb-1">Special Instructions</h4>
-                <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg flex items-start space-x-2">
-                  <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
-                  <p className="text-sm text-amber-800">{mockCase.notes}</p>
-                </div>
+                <h4 className="text-sm font-semibold text-gray-700 mb-1">Category</h4>
+                <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">{caseData.category}</p>
               </div>
             )}
 
-            <div className="pt-2">
-              <button className="w-full bg-gray-100 text-gray-700 py-3 rounded-xl font-semibold hover:bg-gray-200 transition-all flex items-center justify-center space-x-2">
-                <Download className="w-5 h-5" />
-                <span>Download Case Report</span>
-              </button>
+            {caseData.severity && (
+              <div>
+                <h4 className="text-sm font-semibold text-gray-700 mb-1">Severity Level</h4>
+                <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">{severityLabel}</p>
+              </div>
+            )}
+
+            <div>
+              <h4 className="text-sm font-semibold text-gray-700 mb-1">Submitted</h4>
+              <p className="text-sm text-gray-600 bg-gray-50 p-3 rounded-lg">
+                {new Date(caseData.created_at).toLocaleString()}
+              </p>
             </div>
           </div>
         </div>
 
+        {/* Status Update Section */}
+        <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-2xl p-5 border border-purple-100 mb-6">
+          <h3 className="font-semibold text-purple-900 mb-3">Update Case Status</h3>
+          
+          {/* Update Error Message */}
+          {updateError && (
+            <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3 flex items-start space-x-3">
+              <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-red-700 text-sm">{updateError}</p>
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            {(['open', 'in_progress', 'resolved', 'closed'] as DisplayStatus[]).map((status) => {
+              const label = status === 'open' ? 'Open' : status === 'in_progress' ? 'In Progress' : status === 'resolved' ? 'Resolved' : 'Closed';
+              const isCurrentStatus = status === currentStatus;
+              return (
+                <button
+                  key={status}
+                  onClick={() => !isCurrentStatus && handleStatusUpdate(status)}
+                  disabled={isCurrentStatus || isUpdating}
+                  className={`w-full py-2.5 px-3 rounded-lg text-sm font-medium transition-all ${
+                    isCurrentStatus
+                      ? 'bg-purple-600 text-white'
+                      : 'bg-white text-purple-700 border border-purple-200 hover:bg-purple-50'
+                  } ${(isCurrentStatus || isUpdating) ? 'opacity-75 cursor-not-allowed' : ''}`}
+                >
+                  {isUpdating && !isCurrentStatus ? (
+                    <>
+                      <Loader className="w-4 h-4 inline mr-1 animate-spin" />
+                      Updating...
+                    </>
+                  ) : (
+                    <>
+                      {isCurrentStatus && <CheckCircle className="w-4 h-4 inline mr-1" />}
+                      {label}
+                    </>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Help Section */}
-        <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-2xl p-5 border border-purple-100">
-          <h3 className="font-semibold text-purple-900 mb-2">Need Help?</h3>
-          <p className="text-sm text-purple-700 mb-3">
-            Contact our support team 24/7 for any assistance with your case.
+        <div className="bg-gradient-to-br from-blue-50 to-cyan-50 rounded-2xl p-5 border border-blue-100">
+          <h3 className="font-semibold text-blue-900 mb-2">Case Information</h3>
+          <p className="text-sm text-blue-700 mb-3">
+            Your case has been created successfully. You can track its progress here and update the status as needed.
           </p>
-          <button className="bg-purple-600 text-white py-2.5 px-4 rounded-lg font-semibold hover:bg-purple-700 transition-all text-sm">
-            Contact Support
+          <button className="bg-blue-600 text-white py-2.5 px-4 rounded-lg font-semibold hover:bg-blue-700 transition-all text-sm w-full">
+            <RefreshCw className="w-4 h-4 inline mr-2" />
+            Refresh Details
           </button>
         </div>
       </div>

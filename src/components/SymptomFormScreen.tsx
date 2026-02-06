@@ -1,27 +1,32 @@
 import { useState, useRef } from 'react';
-import { ChevronLeft, FileText, Image, X, Upload, Sparkles } from 'lucide-react';
+import { ChevronLeft, FileText, Image, X, Upload, Sparkles, AlertCircle, Loader2 } from 'lucide-react';
+import { createCase, analyzeImage, fileToBase64, type ImageAnalysisResponse } from '@/lib/apiClient';
+import type { HealthCase } from '@/types';
 
 interface SymptomFormScreenProps {
   initialImages?: File[];
-  onSubmit: (symptoms: string, images?: File[]) => void;
+  initialSymptoms?: string;
+  onSubmit: (caseData: HealthCase) => void;
   onBack: () => void;
 }
 
-export function SymptomFormScreen({ initialImages = [], onSubmit, onBack }: SymptomFormScreenProps) {
-  const [symptoms, setSymptoms] = useState('');
+export function SymptomFormScreen({ initialImages = [], initialSymptoms = '', onSubmit, onBack }: SymptomFormScreenProps) {
+  const [symptoms, setSymptoms] = useState(initialSymptoms);
   const [images, setImages] = useState<File[]>(initialImages);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [analysisResult, setAnalysisResult] = useState<ImageAnalysisResponse | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Generate image previews
-  useState(() => {
-    if (initialImages.length > 0) {
-      const previews = initialImages.map(file => URL.createObjectURL(file));
-      setImagePreviews(previews);
-    }
-  });
+  // Initialize image previews from initial images
+  if (initialImages.length > 0 && imagePreviews.length === 0) {
+    const previews = initialImages.map(file => URL.createObjectURL(file));
+    setImagePreviews(previews);
+  }
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files) {
       const newFiles = Array.from(files);
@@ -29,6 +34,46 @@ export function SymptomFormScreen({ initialImages = [], onSubmit, onBack }: Symp
       
       setImages(prev => [...prev, ...newFiles]);
       setImagePreviews(prev => [...prev, ...newPreviews]);
+
+      // Auto-analyze first image if symptoms are provided
+      if (newFiles.length > 0 && symptoms.trim()) {
+        await analyzeFirstImage(newFiles[0]);
+      }
+    }
+  };
+
+  const analyzeFirstImage = async (imageFile: File) => {
+    setIsAnalyzing(true);
+    setError(null);
+    
+    try {
+      console.log('[SymptomForm] Starting image analysis...');
+      
+      // Convert image to base64
+      const base64Image = await fileToBase64(imageFile);
+      
+      // Call Gemini API
+      const result = await analyzeImage(
+        base64Image,
+        symptoms.trim() || undefined,
+        'Analyze this medical image for visible symptoms and conditions'
+      );
+      
+      console.log('[SymptomForm] Analysis complete:', result);
+      setAnalysisResult(result);
+      
+      // Auto-fill symptoms if empty
+      if (!symptoms.trim() && result.detected_symptoms.length > 0) {
+        const detectedSymptoms = result.detected_symptoms
+          .map(s => `${s.symptom_name} (${s.severity})`)
+          .join(', ');
+        setSymptoms(`Detected symptoms: ${detectedSymptoms}\n\n${result.analysis_text}`);
+      }
+    } catch (err: any) {
+      console.error('[SymptomForm] Image analysis failed:', err);
+      setError(`Image analysis failed: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsAnalyzing(false);
     }
   };
 
@@ -40,10 +85,41 @@ export function SymptomFormScreen({ initialImages = [], onSubmit, onBack }: Symp
     });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (symptoms.trim() || images.length > 0) {
-      onSubmit(symptoms, images);
+    
+    if (!symptoms.trim()) {
+      setError('Please describe your symptoms');
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      // Step 1: Analyze image if available and not already analyzed
+      if (images.length > 0 && !analysisResult) {
+        await analyzeFirstImage(images[0]);
+      }
+
+      // Step 2: Create health case with analysis results
+      const caseData = await createCase({
+        symptoms: symptoms.trim(),
+        severity: analysisResult?.urgency_level || undefined,
+        category: analysisResult?.possible_conditions?.[0] || undefined,
+      });
+
+      console.log('[SymptomForm] Case created successfully:', caseData);
+
+      // Step 3: Pass created case back to parent
+      onSubmit(caseData);
+    } catch (err: any) {
+      console.error('[SymptomForm] Failed to create case:', err);
+      setError(
+        err.message || 
+        'Failed to create case. Please try again.'
+      );
+      setIsLoading(false);
     }
   };
 
@@ -64,6 +140,71 @@ export function SymptomFormScreen({ initialImages = [], onSubmit, onBack }: Symp
 
       {/* Main Content */}
       <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-6 py-8 flex flex-col">
+        {/* Error Message */}
+        {error && (
+          <div className="mb-6 bg-red-50 border border-red-200 rounded-xl p-4 flex items-start space-x-3">
+            <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+            <div>
+              <h4 className="font-semibold text-red-900 text-sm">Error</h4>
+              <p className="text-red-700 text-sm">{error}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Analysis Loading */}
+        {isAnalyzing && (
+          <div className="mb-6 bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-start space-x-3">
+            <Loader2 className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5 animate-spin" />
+            <div>
+              <h4 className="font-semibold text-blue-900 text-sm">Analyzing Image...</h4>
+              <p className="text-blue-700 text-sm">Our AI is analyzing your medical image</p>
+            </div>
+          </div>
+        )}
+
+        {/* Analysis Results */}
+        {analysisResult && !isAnalyzing && (
+          <div className="mb-6 bg-green-50 border border-green-200 rounded-xl p-4">
+            <div className="flex items-start space-x-3 mb-3">
+              <Sparkles className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <h4 className="font-semibold text-green-900 text-sm mb-1">AI Analysis Complete</h4>
+                <p className="text-green-700 text-sm mb-2">{analysisResult.analysis_text}</p>
+              </div>
+            </div>
+            
+            {analysisResult.detected_symptoms.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-green-200">
+                <p className="text-xs font-semibold text-green-900 mb-2">Detected Symptoms:</p>
+                <div className="flex flex-wrap gap-2">
+                  {analysisResult.detected_symptoms.map((symptom, idx) => (
+                    <span
+                      key={idx}
+                      className="inline-flex items-center px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full"
+                    >
+                      {symptom.symptom_name} ({symptom.severity})
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {analysisResult.urgency_level && (
+              <div className="mt-2">
+                <span className={`inline-flex items-center px-2 py-1 text-xs rounded-full ${
+                  analysisResult.urgency_level === 'high' || analysisResult.urgency_level === 'emergency'
+                    ? 'bg-red-100 text-red-800'
+                    : analysisResult.urgency_level === 'medium'
+                    ? 'bg-yellow-100 text-yellow-800'
+                    : 'bg-green-100 text-green-800'
+                }`}>
+                  Urgency: {analysisResult.urgency_level}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Progress Indicator */}
         <div className="mb-8">
           <div className="flex items-center justify-between mb-2">
@@ -166,14 +307,23 @@ export function SymptomFormScreen({ initialImages = [], onSubmit, onBack }: Symp
         <div className="mt-auto pt-4">
           <button
             type="submit"
-            disabled={!symptoms.trim() && images.length === 0}
+            disabled={!symptoms.trim() || isLoading}
             className="w-full bg-gradient-to-r from-blue-600 to-cyan-500 text-white py-4 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 flex items-center justify-center space-x-2"
           >
-            <Sparkles className="w-5 h-5" />
-            <span>Analyze with AI</span>
+            {isLoading ? (
+              <>
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <span>Creating case...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-5 h-5" />
+                <span>Analyze with AI</span>
+              </>
+            )}
           </button>
           <p className="text-center text-xs text-gray-500 mt-3">
-            Our AI will analyze your symptoms and provide recommendations
+            {isLoading ? 'Creating your case and analyzing symptoms...' : 'Our AI will analyze your symptoms and provide recommendations'}
           </p>
         </div>
       </form>

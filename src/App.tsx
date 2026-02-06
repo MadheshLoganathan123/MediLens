@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
 import { supabase } from './lib/supabaseClient';
-import { apiFetch, ApiError, analyzeIssue } from './lib/apiClient';
+import { apiFetch, ApiError } from './lib/apiClient';
+import type { HealthCase } from './types';
 import { SplashScreen } from './components/SplashScreen';
 import { LoginScreen } from './components/LoginScreen';
 import { SignupScreen } from './components/SignupScreen';
 import { EnhancedProfileSetupScreen } from './components/EnhancedProfileSetupScreen';
 import { HomeScreen } from './components/HomeScreen';
 import { ReportHealthIssueScreen } from './components/ReportHealthIssueScreen';
+import { VoiceRecorderScreen } from './components/VoiceRecorderScreen';
 import { SymptomFormScreen } from './components/SymptomFormScreen';
 import { AnalysisResultScreen } from './components/AnalysisResultScreen';
 import { NearbyHospitalsScreen } from './components/NearbyHospitalsScreen';
@@ -15,7 +17,7 @@ import { MyCasesScreen } from './components/MyCasesScreen';
 import { MedicationsScreen } from './components/MedicationsScreen';
 import { AppointmentsScreen } from './components/AppointmentsScreen';
 
-type Screen = 'splash' | 'login' | 'signup' | 'profile-setup' | 'profile-edit' | 'home' | 'report-health' | 'symptom-form' | 'analysis-result' | 'nearby-hospitals' | 'case-status' | 'my-cases' | 'medications' | 'appointments';
+type Screen = 'splash' | 'login' | 'signup' | 'profile-setup' | 'profile-edit' | 'home' | 'report-health' | 'voice-recorder' | 'symptom-form' | 'analysis-result' | 'nearby-hospitals' | 'case-status' | 'my-cases' | 'medications' | 'appointments';
 
 interface UserProfile {
   name: string;
@@ -36,6 +38,8 @@ export default function App({ initialScreen = 'splash' }: AppProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [currentScreen, setCurrentScreen] = useState<Screen>(initialScreen);
   const [userProfile, setUserProfile] = useState<any>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
   const [reportData, setReportData] = useState<{
     method?: 'image' | 'text' | 'voice';
     symptoms?: string;
@@ -169,24 +173,30 @@ export default function App({ initialScreen = 'splash' }: AppProps) {
 
   async function handleSupabaseLogin(email: string, password: string) {
     try {
-      setIsLoading(true);
+      setAuthError(null);
+      setIsAuthLoading(true);
       const { error, data } = await supabase.auth.signInWithPassword({ email, password });
       if (error) {
-        alert('Login error: ' + error.message);
+        const errorMsg = error.message === 'Invalid login credentials'
+          ? 'Invalid email or password. Please try again.'
+          : error.message || 'Login failed. Please try again.';
+        setAuthError(errorMsg);
+        return;
       }
       // onAuthStateChange will handle navigation on successful login
       return data;
     } catch (err: any) {
       console.error('Login failed:', err);
-      alert('Login failed: ' + (err?.message || err));
+      setAuthError(err?.message || 'Login failed. Please try again.');
     } finally {
-      setIsLoading(false);
+      setIsAuthLoading(false);
     }
   }
 
   async function handleSupabaseSignup(name: string, email: string, password: string) {
     try {
-      setIsLoading(true);
+      setAuthError(null);
+      setIsAuthLoading(true);
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -197,7 +207,10 @@ export default function App({ initialScreen = 'splash' }: AppProps) {
 
       if (error) {
         console.error('Signup error:', error);
-        alert('Signup error: ' + error.message);
+        const errorMsg = error.message.includes('already registered')
+          ? 'This email is already registered. Please sign in or use a different email.'
+          : error.message || 'Signup failed. Please try again.';
+        setAuthError(errorMsg);
         return;
       }
 
@@ -221,18 +234,18 @@ export default function App({ initialScreen = 'splash' }: AppProps) {
           console.warn('Failed to create profile automatically:', insertErr.message || insertErr);
         }
 
-        alert('Signup successful!');
+        setAuthError(null);
         // navigation handled by auth listener
       } else {
         // No immediate session — likely email confirmation flow
-        alert('Check your email for confirmation!');
+        setAuthError(null);
         setCurrentScreen('login');
       }
     } catch (err: any) {
       console.error('Signup failed:', err);
-      alert('Signup failed: ' + (err?.message || err));
+      setAuthError(err?.message || 'Signup failed. Please try again.');
     } finally {
-      setIsLoading(false);
+      setIsAuthLoading(false);
     }
   }
 
@@ -250,6 +263,21 @@ export default function App({ initialScreen = 'splash' }: AppProps) {
     try {
       const profileData = {
         full_name: profile.name,
+        phone_number: profile.phone || profile.phoneNumber,
+        date_of_birth: profile.dateOfBirth,
+        address: profile.address,
+        city: profile.city,
+        zip_code: profile.zipCode,
+        blood_type: profile.bloodType,
+        height: profile.height ? parseFloat(profile.height) : null,
+        weight: profile.weight ? parseFloat(profile.weight) : null,
+        allergies: profile.allergies,
+        chronic_conditions: profile.chronicConditions,
+        current_medications: profile.currentMedications,
+        emergency_contact_name: profile.emergencyContactName,
+        emergency_contact_phone: profile.emergencyContactPhone,
+        insurance_provider: profile.insuranceProvider,
+        insurance_number: profile.insuranceNumber,
         medical_history: profile.medicalInfo
           ? [{ info: profile.medicalInfo, date: new Date().toISOString() }]
           : [],
@@ -257,54 +285,17 @@ export default function App({ initialScreen = 'splash' }: AppProps) {
         longitude: profile.longitude,
       };
 
-<<<<<<< HEAD
       const data = await apiFetch('/profile', {
         method: 'POST',
         body: JSON.stringify(profileData),
       });
 
-=======
-    const profileData = {
-      id: session.user.id,
-      full_name: profile.name,
-      phone_number: profile.phone,
-      date_of_birth: profile.dateOfBirth,
-      address: profile.address,
-      city: profile.city,
-      zip_code: profile.zipCode,
-      blood_type: profile.bloodType,
-      height: profile.height ? parseFloat(profile.height) : null,
-      weight: profile.weight ? parseFloat(profile.weight) : null,
-      allergies: profile.allergies,
-      chronic_conditions: profile.chronicConditions,
-      current_medications: profile.currentMedications,
-      emergency_contact_name: profile.emergencyContactName,
-      emergency_contact_phone: profile.emergencyContactPhone,
-      insurance_provider: profile.insuranceProvider,
-      insurance_number: profile.insuranceNumber,
-      updated_at: new Date().toISOString(),
-      medical_history: profile.medicalInfo ? [{ info: profile.medicalInfo, date: new Date().toISOString() }] : [],
-      latitude: profile.latitude,
-      longitude: profile.longitude
-    };
-
-    // Use Supabase directly for setup
-    const { data, error } = await supabase
-      .from('profiles')
-      .upsert(profileData)
-      .select()
-      .single();
-
-    if (error) {
-      alert('Error updating profile: ' + error.message);
-    } else {
->>>>>>> 5617faaa2fb3dd7c3115aab3dea4984b04837600
       setUserProfile(data);
       setCurrentScreen('home');
     } catch (err: any) {
       const apiErr = err as ApiError;
       console.error('Error updating profile via API:', apiErr);
-      alert('Error updating profile: ' + (apiErr.message || 'Unknown error'));
+      setAuthError(err.message || 'Error updating profile. Please try again.');
     }
   }
 
@@ -312,10 +303,8 @@ export default function App({ initialScreen = 'splash' }: AppProps) {
     if (!session?.user) return;
 
     const profileData = {
-      id: session.user.id,
-      email: session.user.email,
       full_name: profile.name,
-      phone_number: profile.phone,
+      phone_number: profile.phone || profile.phoneNumber,
       date_of_birth: profile.dateOfBirth,
       address: profile.address,
       city: profile.city,
@@ -336,20 +325,13 @@ export default function App({ initialScreen = 'splash' }: AppProps) {
     };
 
     try {
-      // Call FastAPI backend for profile update
-      const response = await fetch('http://localhost:5000/profile', {
+      // Call FastAPI backend for profile update using apiFetch
+      const updatedProfile = await apiFetch('/profile', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify(profileData),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to update profile on server');
-      }
-
-      const updatedProfile = await response.json();
+      // Update local state with the response from backend
       setUserProfile(updatedProfile);
       setCurrentScreen('home');
     } catch (err: any) {
@@ -365,22 +347,36 @@ export default function App({ initialScreen = 'splash' }: AppProps) {
 
   const handleMethodSelected = (method: 'image' | 'text' | 'voice', images?: File[]) => {
     setReportData({ method, images });
+    if (method === 'voice') {
+      setCurrentScreen('voice-recorder');
+    } else {
+      setCurrentScreen('symptom-form');
+    }
+  };
+
+  const handleVoiceTranscriptComplete = (transcript: string) => {
+    // Store the voice transcript in report data
+    setReportData((prev) => ({
+      ...prev,
+      symptoms: transcript,
+    }));
+    // Navigate to symptom form to review and submit
     setCurrentScreen('symptom-form');
   };
 
-  const handleSubmitSymptoms = async (symptoms: string, images?: File[]) => {
-    // Optimistically store user inputs
-    setReportData((prev) => ({ ...prev, symptoms, images }));
+  const handleSubmitSymptoms = (caseData: HealthCase) => {
+    // Store the created case ID
+    setSelectedCaseId(caseData.id);
+    
+    // Store case data for reference
+    setReportData((prev) => ({
+      ...prev,
+      symptoms: caseData.symptoms,
+      aiAnalysis: caseData.ai_analysis ? JSON.stringify(caseData.ai_analysis) : undefined,
+    }));
 
-    try {
-      const ai = await analyzeIssue(symptoms, !!(images && images.length > 0));
-      setReportData((prev) => ({ ...prev, symptoms, images, aiAnalysis: ai.analysis }));
-    } catch (err: any) {
-      console.error('AI analysis failed:', err);
-      // Keep going with just user symptoms if AI fails
-    }
-
-    setCurrentScreen('analysis-result');
+    // Navigate to case status screen
+    setCurrentScreen('case-status');
   };
 
   const handleBackToHome = () => {
@@ -453,14 +449,26 @@ export default function App({ initialScreen = 'splash' }: AppProps) {
         return (
           <LoginScreen
             onLogin={handleSupabaseLogin}
-            onNavigateToSignup={() => setCurrentScreen('signup')}
+            onNavigateToSignup={() => {
+              setAuthError(null);
+              setCurrentScreen('signup');
+            }}
+            isLoading={isAuthLoading}
+            error={authError}
+            onDismissError={() => setAuthError(null)}
           />
         );
       case 'signup':
         return (
           <SignupScreen
             onSignup={handleSupabaseSignup}
-            onNavigateToLogin={() => setCurrentScreen('login')}
+            onNavigateToLogin={() => {
+              setAuthError(null);
+              setCurrentScreen('login');
+            }}
+            isLoading={isAuthLoading}
+            error={authError}
+            onDismissError={() => setAuthError(null)}
           />
         );
       case 'profile-setup':
@@ -480,7 +488,22 @@ export default function App({ initialScreen = 'splash' }: AppProps) {
               gender: userProfile?.gender || '',
               medicalInfo: userProfile?.medical_history && userProfile.medical_history.length > 0
                 ? userProfile.medical_history[0].info
-                : ''
+                : '',
+              phone_number: userProfile?.phone_number,
+              date_of_birth: userProfile?.date_of_birth,
+              address: userProfile?.address,
+              city: userProfile?.city,
+              zip_code: userProfile?.zip_code,
+              blood_type: userProfile?.blood_type,
+              height: userProfile?.height,
+              weight: userProfile?.weight,
+              allergies: userProfile?.allergies,
+              chronic_conditions: userProfile?.chronic_conditions,
+              current_medications: userProfile?.current_medications,
+              emergency_contact_name: userProfile?.emergency_contact_name,
+              emergency_contact_phone: userProfile?.emergency_contact_phone,
+              insurance_provider: userProfile?.insurance_provider,
+              insurance_number: userProfile?.insurance_number
             }}
             onStartReport={handleStartReport}
             onNavigateToHospitals={handleNavigateToHospitals}
@@ -527,10 +550,18 @@ export default function App({ initialScreen = 'splash' }: AppProps) {
             onBack={handleBackToHome}
           />
         );
+      case 'voice-recorder':
+        return (
+          <VoiceRecorderScreen
+            onTranscriptComplete={handleVoiceTranscriptComplete}
+            onBack={() => setCurrentScreen('report-health')}
+          />
+        );
       case 'symptom-form':
         return (
           <SymptomFormScreen
             initialImages={reportData.images}
+            initialSymptoms={reportData.symptoms}
             onSubmit={handleSubmitSymptoms}
             onBack={() => setCurrentScreen('report-health')}
           />
@@ -558,14 +589,14 @@ export default function App({ initialScreen = 'splash' }: AppProps) {
         return (
           <MyCasesScreen
             onBack={handleBackToHome}
-            onViewCase={handleViewCase}
+            onSelectCase={handleViewCase}
           />
         );
       case 'case-status':
         return (
           <CaseStatusScreen
             caseId={selectedCaseId}
-            onBack={() => setCurrentScreen('my-cases')}
+            onBack={handleBackToHome}
           />
         );
       case 'medications':

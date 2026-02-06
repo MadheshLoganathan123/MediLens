@@ -21,16 +21,25 @@ class Settings(BaseSettings):
     Values are loaded from environment variables and optional .env files.
     """
 
-    # Supabase project configuration
+    # Supabase project configuration (kept for backward compatibility)
     SUPABASE_URL: AnyHttpUrl = Field(alias="VITE_SUPABASE_URL")
-    SUPABASE_SERVICE_ROLE_KEY: str | None = None
-    SUPABASE_JWT_SECRET: str | None = None
+    SUPABASE_SERVICE_ROLE_KEY: str | None = Field(default=None, alias="SUPABASE_SERVICE_ROLE_KEY")
+    SUPABASE_ANON_KEY: str | None = Field(default=None, alias="VITE_SUPABASE_ANON_KEY")
+    SUPABASE_JWT_SECRET: str | None = Field(default=None, alias="SUPABASE_JWT_SECRET")
 
-    # OpenRouter API key for AI analysis
-    OPENROUTER_API_KEY: str | None = None
+    # Custom JWT secret for password-based auth
+    JWT_SECRET: str = Field(default="your-secret-key-change-in-production")
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRATION_HOURS: int = 24
+
+    # Google Gemini API key for medical image analysis
+    GEMINI_API_KEY: str | None = None
+
+    # RapidAPI key for map services
+    RAPIDAPI_KEY: str | None = None
 
     # Comma-separated list of allowed origins for CORS
-    BACKEND_CORS_ORIGINS: str = "http://localhost:5173"
+    BACKEND_CORS_ORIGINS: str = "http://localhost:5173,http://localhost:5174,http://localhost:3000"
 
     @property
     def allowed_origins(self) -> List[str]:
@@ -46,4 +55,24 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# Validate critical settings on startup
+if settings.JWT_SECRET == "your-secret-key-change-in-production":
+    import warnings
+    import sys
+    
+    # Check if we're in production (you can customize this check)
+    is_production = os.environ.get("ENVIRONMENT", "development").lower() == "production"
+    
+    if is_production:
+        raise RuntimeError(
+            "CRITICAL: JWT_SECRET is using the default value in production. "
+            "Please set a strong JWT_SECRET in your backend/.env file."
+        )
+    else:
+        warnings.warn(
+            "JWT_SECRET is using the default value. Please set a strong JWT_SECRET in your backend/.env file for production.",
+            RuntimeWarning
+        )
+
 

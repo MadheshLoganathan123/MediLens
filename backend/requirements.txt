@@ -5,3 +5,17 @@ python-dotenv
 pydantic
 pydantic-settings
 python-jose[cryptography]
+bcrypt
+requests
+email-validator
+agno
+google-generativeai
+opencv-python
+numpy
+pillow
+pytest
+pytest-asyncio
+httpx
+openai-whisper
+torch
+ffmpeg-python
