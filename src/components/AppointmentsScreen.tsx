@@ -125,9 +125,9 @@ export function AppointmentsScreen({ onBack }: AppointmentsScreenProps) {
   };
 
   return (
-    <div className="h-full w-full flex flex-col bg-gradient-to-br from-blue-50 via-white to-blue-50">
+    <div className="h-full w-full flex flex-col bg-gradient-to-br from-blue-50 via-white to-blue-50 overflow-hidden">
       {/* Header */}
-      <div className="bg-gradient-to-r from-orange-600 to-amber-500 px-6 pt-12 pb-6 rounded-b-3xl shadow-lg">
+      <div className="bg-gradient-to-r from-orange-600 to-amber-500 px-6 pt-10 pb-6 flex-shrink-0">
         <button
           onClick={onBack}
           className="mb-6 flex items-center text-white hover:text-orange-100 transition-colors"

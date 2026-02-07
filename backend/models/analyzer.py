@@ -35,10 +35,17 @@ class MedicalSymptomAnalyzer:
 Analyze the medical image and provide a structured JSON response with the following fields:
 
 {
-    "observed_symptoms": ["list of observable physical signs from the image"],
-    "possible_causes": ["brief list of potential conditions based on visible symptoms"],
-    "severity_level": "low / medium / high",
-    "recommendation": "specific action advice for the patient",
+    "analysis_text": "brief summary of what you observe in the image",
+    "detected_symptoms": [
+        {
+            "symptom_name": "name of symptom",
+            "severity": "low / medium / high",
+            "description": "brief description"
+        }
+    ],
+    "possible_conditions": ["list of potential conditions based on visible symptoms"],
+    "urgency_level": "low / medium / high / emergency",
+    "recommendations": ["specific action advice for the patient"],
     "disclaimer": "This is not a medical diagnosis. Please consult a healthcare professional."
 }
 
@@ -48,6 +55,7 @@ Guidelines:
 - Use simple but professional medical language
 - Be specific about visible symptoms
 - Provide actionable recommendations
+- Set urgency_level based on severity: emergency for critical, high for urgent, medium for moderate, low for minor
 - Always include the medical disclaimer
 
 Return ONLY valid JSON, no additional text or markdown."""
@@ -99,37 +107,59 @@ Return ONLY valid JSON, no additional text or markdown."""
             else:
                 result_json = content
             
-            # Ensure all required fields are present
-            if "observed_symptoms" not in result_json:
-                result_json["observed_symptoms"] = ["Unable to detect specific symptoms"]
-            if "possible_causes" not in result_json:
-                result_json["possible_causes"] = ["Further medical evaluation needed"]
-            if "severity_level" not in result_json:
-                result_json["severity_level"] = "medium"
-            if "recommendation" not in result_json:
-                result_json["recommendation"] = "Please consult a healthcare professional for proper diagnosis"
+            # Ensure all required fields are present with correct names
+            if "analysis_text" not in result_json:
+                result_json["analysis_text"] = "Image analysis completed"
+            
+            if "detected_symptoms" not in result_json:
+                result_json["detected_symptoms"] = []
+            
+            if "possible_conditions" not in result_json:
+                result_json["possible_conditions"] = ["Further medical evaluation needed"]
+            
+            # Map severity_level to urgency_level if needed
+            if "severity_level" in result_json and "urgency_level" not in result_json:
+                result_json["urgency_level"] = result_json["severity_level"]
+            
+            if "urgency_level" not in result_json:
+                result_json["urgency_level"] = "medium"
+            
+            if "recommendations" not in result_json:
+                if "recommendation" in result_json:
+                    # Convert single recommendation to array
+                    result_json["recommendations"] = [result_json["recommendation"]]
+                else:
+                    result_json["recommendations"] = ["Please consult a healthcare professional for proper diagnosis"]
+            
             if "disclaimer" not in result_json:
                 result_json["disclaimer"] = "This is not a medical diagnosis. Please consult a healthcare professional."
+            
+            # Add success flag
+            result_json["success"] = True
             
             return result_json
 
         except json.JSONDecodeError as e:
             # If JSON parsing fails, create a structured response from the text
             return {
-                "observed_symptoms": ["Analysis completed but response format needs adjustment"],
-                "possible_causes": ["Please consult a healthcare professional"],
-                "severity_level": "medium",
-                "recommendation": "Seek professional medical evaluation for accurate diagnosis",
+                "success": False,
+                "analysis_text": "Analysis completed but response format needs adjustment",
+                "detected_symptoms": [],
+                "possible_conditions": ["Please consult a healthcare professional"],
+                "urgency_level": "medium",
+                "recommendations": ["Seek professional medical evaluation for accurate diagnosis"],
                 "disclaimer": "This is not a medical diagnosis. Please consult a healthcare professional.",
                 "raw_response": str(response.content) if 'response' in locals() else "No response"
             }
         except Exception as e:
             return {
+                "success": False,
                 "error": str(e),
                 "message": "Failed to analyze image",
-                "observed_symptoms": ["Analysis error occurred"],
-                "possible_causes": ["Technical issue during analysis"],
-                "severity_level": "unknown",
-                "recommendation": "Please try again or consult a healthcare professional",
+                "analysis_text": "Analysis error occurred",
+                "detected_symptoms": [],
+                "possible_conditions": ["Technical issue during analysis"],
+                "urgency_level": "unknown",
+                "recommendations": ["Please try again or consult a healthcare professional"],
                 "disclaimer": "This is not a medical diagnosis. Please consult a healthcare professional."
             }

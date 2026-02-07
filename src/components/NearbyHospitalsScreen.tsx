@@ -82,8 +82,14 @@ export function NearbyHospitalsScreen({ userProfile, onBack, onSelectHospital }:
         const userLat = userProfile?.location?.lat || DEFAULT_CENTER.lat;
         const userLng = userProfile?.location?.lng || DEFAULT_CENTER.lng;
 
-        // Fetch real data from Overpass API
-        const realHospitals = await fetchNearbyHospitals(userLat, userLng);
+        // Fetch real data from Overpass API (with error handling)
+        let realHospitals: any[] = [];
+        try {
+          realHospitals = await fetchNearbyHospitals(userLat, userLng);
+          console.log(`Fetched ${realHospitals.length} hospitals from Overpass API`);
+        } catch (apiError) {
+          console.warn('Overpass API failed, using local data only:', apiError);
+        }
 
         // Process live data
         const liveProcessed = realHospitals.map((item: any) => {
@@ -346,9 +352,9 @@ export function NearbyHospitalsScreen({ userProfile, onBack, onSelectHospital }:
   };
 
   return (
-    <div className="h-full w-full flex flex-col bg-gradient-to-br from-blue-50 via-white to-blue-50">
+    <div className="h-full w-full flex flex-col bg-gradient-to-br from-blue-50 via-white to-blue-50 overflow-hidden">
       {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-cyan-500 px-6 pt-12 pb-6 rounded-b-3xl shadow-lg">
+      <div className="bg-gradient-to-r from-blue-600 to-cyan-500 px-6 pt-10 pb-6 flex-shrink-0">
         <button
           onClick={onBack}
           className="mb-6 flex items-center text-white hover:text-blue-100 transition-colors"

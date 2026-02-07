@@ -93,9 +93,9 @@ export function ProfileScreen({ onEditProfile, onBack }: ProfileScreenProps) {
 
   return (
     <div className="h-full w-full overflow-y-auto bg-gradient-to-br from-blue-50 via-white to-blue-50">
-      <div className="min-h-full flex flex-col">
+      <div className="min-h-full flex flex-col overflow-hidden">
         {/* Header with Sign Out */}
-        <div className="bg-gradient-to-r from-blue-600 to-cyan-500 px-6 pt-12 pb-8 rounded-b-3xl shadow-lg">
+        <div className="bg-gradient-to-r from-blue-600 to-cyan-500 px-6 pt-10 pb-6 flex-shrink-0">
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-white text-2xl font-bold">My Profile</h1>

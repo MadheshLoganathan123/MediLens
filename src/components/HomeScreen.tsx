@@ -12,17 +12,12 @@ import {
   Home,
   Settings,
   Bell,
-  Zap,
   Droplet,
-  Moon,
-  TrendingUp,
-  Target,
-  Smartphone,
-  BookOpen,
   Phone,
   LogOut,
   Shield
 } from 'lucide-react';
+import { HealthScreen } from './HealthScreen';
 
 interface UserProfile {
   name: string;
@@ -89,9 +84,9 @@ export function HomeScreen({
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
 
   return (
-    <div className="h-screen w-full flex flex-col bg-gradient-to-br from-blue-50 via-white to-blue-50 overflow-hidden">
+    <div className="h-full w-full flex flex-col bg-gradient-to-br from-blue-50 via-white to-blue-50 overflow-hidden">
       {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-cyan-500 px-6 pt-12 pb-8 rounded-b-3xl shadow-lg flex-shrink-0">
+      <div className="bg-gradient-to-r from-blue-600 to-cyan-500 px-6 pt-10 pb-6 flex-shrink-0">
         <div className="flex items-center justify-between mb-6">
           <div>
             <p className="text-blue-100 text-sm">Welcome back,</p>
@@ -239,13 +234,10 @@ export function HomeScreen({
 
       {/* Health Tab */}
       {activeTab === 'health' && (
-        <div className="flex-1 overflow-y-auto px-6 py-6">
-          <div className="text-center py-12">
-            <Activity className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-xl font-bold text-gray-900 mb-2">Health Tracking</h3>
-            <p className="text-gray-600">Track your vitals and health metrics here</p>
-          </div>
-        </div>
+        <HealthScreen
+          onNavigateToCases={onNavigateToCases}
+          onNavigateToMedications={onNavigateToMedications || (() => {})}
+        />
       )}
 
       {/* Care Tab */}
